@@ -35,9 +35,7 @@ import java.nio.charset.Charset;
 public class FastJsonHttpMessageConverter //
         extends AbstractHttpMessageConverter<Object> //
         implements GenericHttpMessageConverter<Object> {
-
-    @Deprecated
-    protected Charset charset = IOUtils.UTF8;
+    private Charset             charset    = Charset.forName("UTF-8");
 
     @Deprecated
     protected SerializerFeature[] features = new SerializerFeature[0];
@@ -150,17 +148,40 @@ public class FastJsonHttpMessageConverter //
             throws IOException, HttpMessageNotWritableException {
         HttpHeaders headers = outputMessage.getHeaders();
         ByteArrayOutputStream outnew = new ByteArrayOutputStream();
-        int len = JSON.writeJSONString(outnew, //
-                fastJsonConfig.getCharset(), //
-                obj, //
-                fastJsonConfig.getSerializeConfig(), //
-                fastJsonConfig.getSerializeFilters(), //
-                fastJsonConfig.getDateFormat(), //
-                JSON.DEFAULT_GENERATE_FEATURE, //
-                fastJsonConfig.getSerializerFeatures());
-        headers.setContentLength(len);
-        OutputStream out = outputMessage.getBody();
-        outnew.writeTo(out);
+
+        boolean writeAsToString = false;
+        if (obj != null) {
+            String className = obj.getClass().getName();
+            if ("com.fasterxml.jackson.databind.node.ObjectNode".equals(className)) {
+                writeAsToString = true;
+            }
+        }
+
+        if (writeAsToString) {
+            String text = obj.toString();
+            OutputStream out = outputMessage.getBody();
+            out.write(text.getBytes());
+            if (fastJsonConfig.isWriteContentLength()) {
+                headers.setContentLength(text.length());
+            }
+        } else {
+            int len = JSON.writeJSONString(outnew, //
+                    fastJsonConfig.getCharset(), //
+                    obj, //
+                    fastJsonConfig.getSerializeConfig(), //
+                    fastJsonConfig.getSerializeFilters(), //
+                    fastJsonConfig.getDateFormat(), //
+                    JSON.DEFAULT_GENERATE_FEATURE, //
+                    fastJsonConfig.getSerializerFeatures());
+            if (fastJsonConfig.isWriteContentLength()) {
+                headers.setContentLength(len);
+            }
+
+            OutputStream out = outputMessage.getBody();
+            outnew.writeTo(out);
+        }
+
+
         outnew.close();
     }
 

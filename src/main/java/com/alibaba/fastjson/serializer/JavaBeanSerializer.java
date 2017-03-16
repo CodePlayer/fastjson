@@ -1,5 +1,5 @@
 /*
- * Copyright 1999-2101 Alibaba Group.
+ * Copyright 1999-2017 Alibaba Group.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.alibaba.fastjson.JSONException;
+import com.alibaba.fastjson.annotation.JSONField;
 import com.alibaba.fastjson.util.FieldInfo;
 import com.alibaba.fastjson.util.TypeUtils;
 
@@ -192,7 +193,7 @@ public class JavaBeanSerializer extends SerializeFilterable implements ObjectSer
                 Object propertyValue;
                 
                 try {
-                    propertyValue = fieldSerializer.getPropertyValue(object);
+                    propertyValue = fieldSerializer.getPropertyValueDirect(object);
                 } catch (InvocationTargetException ex) {
                     if (out.isEnabled(SerializerFeature.IgnoreErrorGetter)) {
                         propertyValue = null;
@@ -213,7 +214,7 @@ public class JavaBeanSerializer extends SerializeFilterable implements ObjectSer
                                                         propertyValue);
 
                 if (propertyValue == null && !writeAsArray) {
-                    if ((!fieldSerializer.writeNull) && (!out.isEnabled(SerializerFeature.WriteMapNullValue))) {
+                    if ((!fieldSerializer.writeNull) && (!out.isEnabled(SerializerFeature.WRITE_MAP_NULL_FEATURES))) {
                         continue;
                     }
                 }
@@ -272,7 +273,8 @@ public class JavaBeanSerializer extends SerializeFilterable implements ObjectSer
                     }
 
                     if (!writeAsArray) {
-                        if (fieldClass == String.class) {
+                        JSONField fieldAnnotation = fieldInfo.getAnnotation();
+                        if (fieldClass == String.class && (fieldAnnotation == null || fieldAnnotation.serializeUsing() == Void.class)) {
                             if (propertyValue == null) {
                                 if ((out.features & SerializerFeature.WriteNullStringAsEmpty.mask) != 0
                                     || (fieldSerializer.features
@@ -331,7 +333,13 @@ public class JavaBeanSerializer extends SerializeFilterable implements ObjectSer
         serializer.out.writeFieldName(serializer.config.typeKey, false);
         String typeName = this.beanInfo.typeName;
         if (typeName == null) {
-            typeName = object.getClass().getName();
+            Class<?> clazz = object.getClass();
+
+            if (TypeUtils.isProxy(clazz)) {
+                clazz = clazz.getSuperclass();
+            }
+
+            typeName = clazz.getName();
         }
         serializer.write(typeName);
     }
@@ -416,7 +424,7 @@ public class JavaBeanSerializer extends SerializeFilterable implements ObjectSer
     public int getSize(Object object) throws Exception {
         int size = 0;
         for (FieldSerializer getter : sortedGetters) {
-            Object value = getter.getPropertyValue(object);
+            Object value = getter.getPropertyValueDirect(object);
             if (value != null) {
                 size ++;
             }

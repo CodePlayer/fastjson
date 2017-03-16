@@ -42,6 +42,8 @@ public class FieldInfo implements Comparable<FieldInfo> {
     public final boolean    jsonDirect;
     
     public final String     format;
+
+    private final String[]  alternateNames;
     
     public FieldInfo(String name, // 
                      Class<?> declaringClass, // 
@@ -84,6 +86,7 @@ public class FieldInfo implements Comparable<FieldInfo> {
         this.getOnly = false;
         this.jsonDirect = false;
         this.format = null;
+        this.alternateNames = new String[0];
     }
 
     public FieldInfo(String name, // 
@@ -116,7 +119,8 @@ public class FieldInfo implements Comparable<FieldInfo> {
         if (field != null) {
             int modifiers = field.getModifiers();
             fieldAccess = ((modifiers & Modifier.PUBLIC) != 0 || method == null);
-            fieldTransient = Modifier.isTransient(modifiers);
+            fieldTransient = Modifier.isTransient(modifiers)
+                    || TypeUtils.isTransient(method);
         } else {
             fieldAccess = false;
             fieldTransient = false;
@@ -139,8 +143,10 @@ public class FieldInfo implements Comparable<FieldInfo> {
                 format = null;
             }
             jsonDirect = annotation.jsonDirect();
+            alternateNames = annotation.alternateNames();
         } else {
             jsonDirect = false;
+            alternateNames = new String[0];
         }
         this.format = format;
         
@@ -299,8 +305,10 @@ public class FieldInfo implements Comparable<FieldInfo> {
                             if (actualTypes == null) {
                                 actualTypes = paramType.getActualTypeArguments();
                             }
-                            arguments[i] = actualTypes[j];
-                            changed = true;
+                            if (arguments[i] != actualTypes[j]) {
+                                arguments[i] = actualTypes[j];
+                                changed = true;
+                            }
                         }
                     }
                 }
@@ -318,6 +326,8 @@ public class FieldInfo implements Comparable<FieldInfo> {
     public static Type getInheritGenericType(Class<?> clazz, TypeVariable<?> tv) {
         Type type = null;
         GenericDeclaration gd = tv.getGenericDeclaration();
+        Type superGenericType = clazz.getGenericSuperclass();
+
         do {
             type = clazz.getGenericSuperclass();
             if (type == null) {
@@ -325,11 +335,16 @@ public class FieldInfo implements Comparable<FieldInfo> {
             }
             if (type instanceof ParameterizedType) {
                 ParameterizedType ptype = (ParameterizedType) type;
-                if (ptype.getRawType() == gd) {
+
+                Type rawType = ptype.getRawType();
+                boolean eq = gd.equals(rawType) || (gd instanceof Class && rawType instanceof Class && ((Class) gd).isAssignableFrom((Class) rawType));
+                if (eq) {
                     TypeVariable<?>[] tvs = gd.getTypeParameters();
                     Type[] types = ptype.getActualTypeArguments();
                     for (int i = 0; i < tvs.length; i++) {
-                        if (tvs[i] == tv) return types[i];
+                        if (tv.equals(tvs[i])) {
+                            return types[i];
+                        }
                     }
                     return null;
                 }
@@ -435,7 +450,7 @@ public class FieldInfo implements Comparable<FieldInfo> {
 
     public Object get(Object javaObject) throws IllegalAccessException, InvocationTargetException {
         if (method != null) {
-            Object value = method.invoke(javaObject, new Object[0]);
+            Object value = method.invoke(javaObject);
             return value;
         }
 
@@ -458,5 +473,14 @@ public class FieldInfo implements Comparable<FieldInfo> {
         }
 
         TypeUtils.setAccessible(field);
+    }
+
+    public boolean alternateName(String name) {
+        for (String item : this.alternateNames) {
+            if (item.equals(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

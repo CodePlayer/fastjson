@@ -6,12 +6,13 @@
 	<parent>
 		<groupId>com.alibaba</groupId>
 		<artifactId>parent-pom</artifactId>
-		<version>1.0.0-SNAPSHOT</version>
+		<version>1.0.0</version>
 	</parent>
 -->
+
 	<groupId>com.alibaba</groupId>
 	<artifactId>fastjson</artifactId>
-	<version>1.2.16</version>
+	<version>1.2.29-SNAPSHOT</version>
 
 	<packaging>jar</packaging>
 	<name>fastjson</name>
@@ -23,7 +24,7 @@
 	<properties>
 		<junit.version>4.11</junit.version>
 		<gpg.skip>true</gpg.skip>
-		<javadoc.skip>true</javadoc.skip>
+		<javadoc.skip>false</javadoc.skip>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<jdk.version>1.5</jdk.version>
 	</properties>
@@ -207,6 +208,19 @@
 			<scope>provided</scope>
 			<optional>true</optional>
 		</dependency>
+
+		<dependency>
+			<groupId>com.squareup.retrofit2</groupId>
+			<artifactId>retrofit</artifactId>
+			<version>2.1.0</version>
+			<scope>provided</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.squareup.okhttp3</groupId>
+			<artifactId>okhttp</artifactId>
+			<version>3.5.0</version>
+			<scope>provided</scope>
+		</dependency>
 				
 		<dependency>
 			<groupId>io.springfox</groupId>
@@ -346,19 +360,38 @@
 		</dependency>
 		
 		<dependency>
-			<groupId>com.squareup.okhttp3</groupId>
-			<artifactId>okhttp</artifactId>
-			<version>3.2.0</version>
-			<scope>test</scope>
-		</dependency>
-		
-		<dependency>
 			<groupId>org.springframework.data</groupId>
 			<artifactId>spring-data-commons-core</artifactId>
 			<version>1.4.1.RELEASE</version>
 			<scope>test</scope>
 		</dependency>
-	</dependencies>
+
+		<dependency>
+			<groupId>org.glassfish.jersey.containers</groupId>
+			<artifactId>jersey-container-servlet</artifactId>
+			<version>2.21</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.glassfish.jersey.core</groupId>
+			<artifactId>jersey-client</artifactId>
+			<version>2.21</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.glassfish.jersey.test-framework.providers</groupId>
+			<artifactId>jersey-test-framework-provider-jdk-http</artifactId>
+			<version>2.21</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.jsoniter</groupId>
+			<artifactId>jsoniter</artifactId>
+			<version>0.9.8</version>
+			<scope>test</scope>
+		</dependency>
+
+    	</dependencies>
 	<profiles>
 		<profile>
 			<id>travis</id>

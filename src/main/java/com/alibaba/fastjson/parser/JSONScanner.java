@@ -1,5 +1,5 @@
 /*
- * Copyright 1999-2101 Alibaba Group.
+ * Copyright 1999-2017 Alibaba Group.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.alibaba.fastjson.parser;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
@@ -111,16 +112,11 @@ public final class JSONScanner extends JSONLexerBase {
         return IOUtils.decodeBase64(text, np + 1, sp);
     }
 
-    // public int scanField2(char[] fieldName, Object object, FieldDeserializer fieldDeserializer) {
-    // return NOT_MATCH;
-    // }
-
     /**
      * The value of a literal token, recorded as a string. For integers, leading 0x and 'l' suffixes are suppressed.
      */
     public final String stringVal() {
         if (!hasSpecial) {
-            // return text.substring(np + 1, np + 1 + sp);
             return this.subString(np + 1, sp);
         } else {
             return new String(sbuf, 0, sp);
@@ -161,13 +157,27 @@ public final class JSONScanner extends JSONLexerBase {
             sp--;
         }
 
-        // return text.substring(np, np + sp);
         return this.subString(np, sp);
     }
 
-    public final static int ISO8601_LEN_0 = "0000-00-00".length();
-    public final static int ISO8601_LEN_1 = "0000-00-00T00:00:00".length();
-    public final static int ISO8601_LEN_2 = "0000-00-00T00:00:00.000".length();
+    public final BigDecimal decimalValue() {
+        char chLocal = charAt(np + sp - 1);
+
+        int sp = this.sp;
+        if (chLocal == 'L' || chLocal == 'S' || chLocal == 'B' || chLocal == 'F' || chLocal == 'D') {
+            sp--;
+        }
+
+        int offset = np, count = sp;
+        if (count < sbuf.length) {
+            text.getChars(offset, offset + count, sbuf, 0);
+            return new BigDecimal(sbuf, 0, count);
+        } else {
+            char[] chars = new char[count];
+            text.getChars(offset, offset + count, chars, 0);
+            return new BigDecimal(chars);
+        }
+    }
 
     public boolean scanISO8601DateIfMatch() {
         return scanISO8601DateIfMatch(true);
@@ -368,7 +378,7 @@ public final class JSONScanner extends JSONLexerBase {
 
         char t = charAt(bp + 10);
         if (t == 'T' || (t == ' ' && !strict)) {
-            if (rest < ISO8601_LEN_1) {
+            if (rest < 19) { // "0000-00-00T00:00:00".length()
                 return false;
             }
         } else if (t == '"' || t == EOI || t == '日' || t == '일') {
@@ -421,7 +431,7 @@ public final class JSONScanner extends JSONLexerBase {
 
         char dot = charAt(bp + 19);
         if (dot == '.') {
-            if (rest < ISO8601_LEN_2) {
+            if (rest < 21) { //  // 0000-00-00T00:00:00.000
                 return false;
             }
         } else {
@@ -451,7 +461,7 @@ public final class JSONScanner extends JSONLexerBase {
         int millis = S0 - '0';
         int millisLen = 1;
 
-        {
+        if (rest > 21) {
             char S1 = charAt(bp + 21);
             if (S1 >= '0' && S1 <= '9') {
                 millis = millis * 10 + (S1 - '0');
@@ -695,8 +705,17 @@ public final class JSONScanner extends JSONLexerBase {
                 return 0;
             }
 
-            if (ch == ',' || ch == '}') {
-                bp = index - 1;
+            for (;;) {
+                if (ch == ',' || ch == '}') {
+                    bp = index - 1;
+                    break;
+                } else if(isWhitespace(ch)) {
+                    ch = charAt(index++);
+                    continue;
+                } else {
+                    matchStat = NOT_MATCH;
+                    return 0;
+                }
             }
         } else {
             matchStat = NOT_MATCH;
@@ -711,23 +730,33 @@ public final class JSONScanner extends JSONLexerBase {
         }
 
         if (ch == '}') {
+            bp = index - 1;
             ch = charAt(++bp);
-            if (ch == ',') {
-                token = JSONToken.COMMA;
-                this.ch = charAt(++bp);
-            } else if (ch == ']') {
-                token = JSONToken.RBRACKET;
-                this.ch = charAt(++bp);
-            } else if (ch == '}') {
-                token = JSONToken.RBRACE;
-                this.ch = charAt(++bp);
-            } else if (ch == EOI) {
-                token = JSONToken.EOF;
-            } else {
-                this.bp = startPos;
-                this.ch = startChar;
-                matchStat = NOT_MATCH;
-                return 0;
+            for (; ; ) {
+                if (ch == ',') {
+                    token = JSONToken.COMMA;
+                    this.ch = charAt(++bp);
+                    break;
+                } else if (ch == ']') {
+                    token = JSONToken.RBRACKET;
+                    this.ch = charAt(++bp);
+                    break;
+                } else if (ch == '}') {
+                    token = JSONToken.RBRACE;
+                    this.ch = charAt(++bp);
+                    break;
+                } else if (ch == EOI) {
+                    token = JSONToken.EOF;
+                    break;
+                } else if (isWhitespace(ch)) {
+                    ch = charAt(++bp);
+                    continue;
+                } else {
+                    this.bp = startPos;
+                    this.ch = startChar;
+                    matchStat = NOT_MATCH;
+                    return 0;
+                }
             }
             matchStat = END;
         }
@@ -787,14 +816,20 @@ public final class JSONScanner extends JSONLexerBase {
 
             ch = charAt(endIndex + 1);
 
-            if (ch == ',' || ch == '}') {
-                bp = endIndex + 1;
-                this.ch = ch;
-                strVal = stringVal;
-            } else {
-                matchStat = NOT_MATCH;
+            for (;;) {
+                if (ch == ',' || ch == '}') {
+                    bp = endIndex + 1;
+                    this.ch = ch;
+                    strVal = stringVal;
+                    break;
+                } else if (isWhitespace(ch)) {
+                    endIndex++;
+                    ch = charAt(endIndex + 1);
+                } else {
+                    matchStat = NOT_MATCH;
 
-                return stringDefaultValue();
+                    return stringDefaultValue();
+                }
             }
         }
 
@@ -802,7 +837,8 @@ public final class JSONScanner extends JSONLexerBase {
             this.ch = charAt(++bp);
             matchStat = VALUE;
             return strVal;
-        } else if (ch == '}') {
+        } else {
+            //condition ch == '}' is always 'true'
             ch = charAt(++bp);
             if (ch == ',') {
                 token = JSONToken.COMMA;
@@ -822,21 +858,16 @@ public final class JSONScanner extends JSONLexerBase {
                 return stringDefaultValue();
             }
             matchStat = END;
-        } else {
-            matchStat = NOT_MATCH;
-
-            return stringDefaultValue();
         }
-
         return strVal;
     }
 
-    public String scanFieldSymbol(char[] fieldName, final SymbolTable symbolTable) {
+    public long scanFieldSymbol(char[] fieldName) {
         matchStat = UNKNOWN;
 
         if (!charArrayCompare(text, bp, fieldName)) {
             matchStat = NOT_MATCH_NAME;
-            return null;
+            return 0;
         }
 
         int index = bp + fieldName.length;
@@ -844,58 +875,78 @@ public final class JSONScanner extends JSONLexerBase {
         char ch = charAt(index++);
         if (ch != '"') {
             matchStat = NOT_MATCH;
-            return null;
+            return 0;
         }
 
-        String strVal;
-        int start = index;
-        int hash = 0;
+        long hash = 0x811c9dc5;
         for (;;) {
             ch = charAt(index++);
             if (ch == '\"') {
                 bp = index;
                 this.ch = ch = charAt(bp);
-                // strVal = text.substring(start, index - 1).intern();
-                strVal = symbolTable.addSymbol(text, start, index - start - 1, hash);
                 break;
-            }
-
-            hash = 31 * hash + ch;
-
-            if (ch == '\\') {
+            } else if (index > len) {
                 matchStat = NOT_MATCH;
-                return null;
+                return 0;
             }
+
+            hash ^= ch;
+            hash *= 0x1000193;
         }
 
-        if (ch == ',') {
-            this.ch = charAt(++bp);
-            matchStat = VALUE;
-            return strVal;
-        } else if (ch == '}') {
-            ch = charAt(++bp);
+        for (;;) {
             if (ch == ',') {
-                token = JSONToken.COMMA;
                 this.ch = charAt(++bp);
-            } else if (ch == ']') {
-                token = JSONToken.RBRACKET;
-                this.ch = charAt(++bp);
+                matchStat = VALUE;
+                return hash;
             } else if (ch == '}') {
-                token = JSONToken.RBRACE;
-                this.ch = charAt(++bp);
-            } else if (ch == EOI) {
-                token = JSONToken.EOF;
+                next();
+                skipWhitespace();
+                ch = getCurrent();
+                if (ch == ',') {
+                    token = JSONToken.COMMA;
+                    this.ch = charAt(++bp);
+                } else if (ch == ']') {
+                    token = JSONToken.RBRACKET;
+                    this.ch = charAt(++bp);
+                } else if (ch == '}') {
+                    token = JSONToken.RBRACE;
+                    this.ch = charAt(++bp);
+                } else if (ch == EOI) {
+                    token = JSONToken.EOF;
+                } else {
+                    matchStat = NOT_MATCH;
+                    return 0;
+                }
+                matchStat = END;
+                break;
+            } else if (isWhitespace(ch)) {
+                ch = charAt(++bp);
+                continue;
             } else {
                 matchStat = NOT_MATCH;
-                return null;
+                return 0;
             }
-            matchStat = END;
-        } else {
-            matchStat = NOT_MATCH;
-            return null;
         }
 
-        return strVal;
+        return hash;
+    }
+    
+    public Collection<String> newCollectionByType(Class<?> type){
+    	if (type.isAssignableFrom(HashSet.class)) {
+    		HashSet<String> list = new HashSet<String>();
+    		return list;
+        } else if (type.isAssignableFrom(ArrayList.class)) {
+        	ArrayList<String> list2 = new ArrayList<String>();
+        	return list2;
+        } else {
+            try {
+            	Collection<String> list = (Collection<String>) type.newInstance();
+            	return list;
+            } catch (Exception e) {
+                throw new JSONException(e.getMessage(), e);
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -907,19 +958,19 @@ public final class JSONScanner extends JSONLexerBase {
             return null;
         }
 
-        Collection<String> list;
+        Collection<String> list = newCollectionByType(type);
 
-        if (type.isAssignableFrom(HashSet.class)) {
-            list = new HashSet<String>();
-        } else if (type.isAssignableFrom(ArrayList.class)) {
-            list = new ArrayList<String>();
-        } else {
-            try {
-                list = (Collection<String>) type.newInstance();
-            } catch (Exception e) {
-                throw new JSONException(e.getMessage(), e);
-            }
-        }
+//        if (type.isAssignableFrom(HashSet.class)) {
+//            list = new HashSet<String>();
+//        } else if (type.isAssignableFrom(ArrayList.class)) {
+//            list = new ArrayList<String>();
+//        } else {
+//            try {
+//                list = (Collection<String>) type.newInstance();
+//            } catch (Exception e) {
+//                throw new JSONException(e.getMessage(), e);
+//            }
+//        }
 
         int index = bp + fieldName.length;
 
@@ -1099,34 +1150,49 @@ public final class JSONScanner extends JSONLexerBase {
             return 0;
         }
 
-        if (ch == ',') {
-            this.ch = charAt(++bp);
-            matchStat = VALUE;
-            token = JSONToken.COMMA;
-            return negative ? -value : value;
-        } else if (ch == '}') {
-            ch = charAt(++bp);
+        for (;;) {
             if (ch == ',') {
+                this.ch = charAt(++bp);
+                matchStat = VALUE;
                 token = JSONToken.COMMA;
-                this.ch = charAt(++bp);
-            } else if (ch == ']') {
-                token = JSONToken.RBRACKET;
-                this.ch = charAt(++bp);
+                return negative ? -value : value;
             } else if (ch == '}') {
-                token = JSONToken.RBRACE;
-                this.ch = charAt(++bp);
-            } else if (ch == EOI) {
-                token = JSONToken.EOF;
+                ch = charAt(++bp);
+                for (;;) {
+                    if (ch == ',') {
+                        token = JSONToken.COMMA;
+                        this.ch = charAt(++bp);
+                        break;
+                    } else if (ch == ']') {
+                        token = JSONToken.RBRACKET;
+                        this.ch = charAt(++bp);
+                        break;
+                    } else if (ch == '}') {
+                        token = JSONToken.RBRACE;
+                        this.ch = charAt(++bp);
+                        break;
+                    } else if (ch == EOI) {
+                        token = JSONToken.EOF;
+                        break;
+                    } else if (isWhitespace(ch)) {
+                        ch = charAt(++bp);
+                    } else {
+                        this.bp = startPos;
+                        this.ch = startChar;
+                        matchStat = NOT_MATCH;
+                        return 0;
+                    }
+                }
+                matchStat = END;
+                break;
+            } else if (isWhitespace(ch)) {
+                bp = index;
+                ch = charAt(index++);
+                continue;
             } else {
-                this.bp = startPos;
-                this.ch = startChar;
                 matchStat = NOT_MATCH;
                 return 0;
             }
-            matchStat = END;
-        } else {
-            matchStat = NOT_MATCH;
-            return 0;
         }
 
         return negative ? -value : value;
@@ -1188,31 +1254,43 @@ public final class JSONScanner extends JSONLexerBase {
             return false;
         }
 
-        if (ch == ',') {
-            this.ch = charAt(++bp);
-            matchStat = VALUE;
-            token = JSONToken.COMMA;
-        } else if (ch == '}') {
-            ch = charAt(++bp);
+        for (;;) {
             if (ch == ',') {
+                this.ch = charAt(++bp);
+                matchStat = VALUE;
                 token = JSONToken.COMMA;
-                this.ch = charAt(++bp);
-            } else if (ch == ']') {
-                token = JSONToken.RBRACKET;
-                this.ch = charAt(++bp);
+                break;
             } else if (ch == '}') {
-                token = JSONToken.RBRACE;
-                this.ch = charAt(++bp);
-            } else if (ch == EOI) {
-                token = JSONToken.EOF;
+                ch = charAt(++bp);
+                for (;;) {
+                    if (ch == ',') {
+                        token = JSONToken.COMMA;
+                        this.ch = charAt(++bp);
+                    } else if (ch == ']') {
+                        token = JSONToken.RBRACKET;
+                        this.ch = charAt(++bp);
+                    } else if (ch == '}') {
+                        token = JSONToken.RBRACE;
+                        this.ch = charAt(++bp);
+                    } else if (ch == EOI) {
+                        token = JSONToken.EOF;
+                    } else if (isWhitespace(ch)) {
+                        ch = charAt(++bp);
+                        continue;
+                    } else {
+                        matchStat = NOT_MATCH;
+                        return false;
+                    }
+                    break;
+                }
+                matchStat = END;
+                break;
+            } else if (isWhitespace(ch)) {
+                ch = charAt(++bp);
             } else {
                 matchStat = NOT_MATCH;
                 return false;
             }
-            matchStat = END;
-        } else {
-            matchStat = NOT_MATCH;
-            return false;
         }
 
         return value;

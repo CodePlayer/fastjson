@@ -47,7 +47,7 @@ public class JSONPath implements JSONAware {
     }
 
     public JSONPath(String path, SerializeConfig serializeConfig, ParserConfig parserConfig){
-        if (path == null || path.isEmpty()) {
+        if (path == null || path.length() == 0) {
             throw new JSONPathException("json-path can not be null or empty");
         }
 
@@ -78,7 +78,8 @@ public class JSONPath implements JSONAware {
 
         Object currentObject = rootObject;
         for (int i = 0; i < segments.length; ++i) {
-            currentObject = segments[i].eval(this, rootObject, currentObject);
+            Segement segement = segments[i];
+            currentObject = segement.eval(this, rootObject, currentObject);
         }
         return currentObject;
     }
@@ -237,6 +238,23 @@ public class JSONPath implements JSONAware {
         Segement lastSegement = segments[segments.length - 1];
         if (lastSegement instanceof PropertySegement) {
             PropertySegement propertySegement = (PropertySegement) lastSegement;
+
+            if (parentObject instanceof Collection) {
+                if (segments.length > 1) {
+                    Segement parentSegement = segments[segments.length - 2];
+                    if (parentSegement instanceof RangeSegement || parentSegement instanceof MultiIndexSegement) {
+                        Collection collection = (Collection) parentObject;
+                        boolean removedOnce = false;
+                        for (Object item : collection) {
+                            boolean removed = propertySegement.remove(this, item);
+                            if (removed) {
+                                removedOnce = true;
+                            }
+                        }
+                        return removedOnce;
+                    }
+                }
+            }
             return propertySegement.remove(this, parentObject);
         }
 
@@ -248,6 +266,10 @@ public class JSONPath implements JSONAware {
     }
 
     public boolean set(Object rootObject, Object value) {
+        return set(rootObject, value, true);
+    }
+
+    public boolean set(Object rootObject, Object value, boolean p) {
         if (rootObject == null) {
             return false;
         }
@@ -270,10 +292,32 @@ public class JSONPath implements JSONAware {
                 if (i < segments.length - 1) {
                     nextSegement = segments[i + 1];
                 }
-                
+
                 Object newObj = null;
                 if (nextSegement instanceof PropertySegement) {
-                    newObj = new JSONObject();   
+                    JavaBeanDeserializer beanDeserializer = null;
+                    Class<?> fieldClass = null;
+                    if (segment instanceof PropertySegement) {
+                        String propertyName = ((PropertySegement) segment).propertyName;
+                        Class<?> parentClass = parentObject.getClass();
+                        JavaBeanDeserializer parentBeanDeserializer = getJavaBeanDeserializer(parentClass);
+                        if (parentBeanDeserializer != null) {
+                            FieldDeserializer fieldDeserializer = parentBeanDeserializer.getFieldDeserializer(propertyName);
+                            fieldClass = fieldDeserializer.fieldInfo.fieldClass;
+                            beanDeserializer = getJavaBeanDeserializer(fieldClass);
+                        }
+                    }
+
+                    if (beanDeserializer != null) {
+
+                        if (beanDeserializer.beanInfo.defaultConstructor != null) {
+                            newObj = beanDeserializer.createInstance(null, fieldClass);
+                        } else {
+                            return false;
+                        }
+                    } else {
+                        newObj = new JSONObject();
+                    }
                 } else if (nextSegement instanceof ArrayAccessSegement) {
                     newObj = new JSONArray();
                 }
@@ -447,13 +491,12 @@ public class JSONPath implements JSONAware {
                 
                 String path = parent.equals("/") ?  "/" + i : parent + "/" + i;
                 paths(paths, path, item, config);
-                ++i;
             }
             
             return;
         }
 
-        if (ParserConfig.isPrimitive(clazz) || clazz.isEnum()) {
+        if (ParserConfig.isPrimitive2(clazz) || clazz.isEnum()) {
             return;
         }
 
@@ -1146,7 +1189,7 @@ public class JSONPath implements JSONAware {
         }
 
         public Segement[] explain() {
-            if (path == null || path.isEmpty()) {
+            if (path == null || path.length() == 0) {
                 throw new IllegalArgumentException();
             }
 
@@ -1219,7 +1262,7 @@ public class JSONPath implements JSONAware {
                 int[] indexes = new int[indexesText.length];
                 for (int i = 0; i < indexesText.length; ++i) {
                     String str = indexesText[i];
-                    if (str.isEmpty()) {
+                    if (str.length() == 0) {
                         if (i == 0) {
                             indexes[i] = 0;
                         } else {
@@ -1389,7 +1432,12 @@ public class JSONPath implements JSONAware {
             int start = this.start >= 0 ? this.start : this.start + size;
             int end = this.end >= 0 ? this.end : this.end + size;
 
-            List<Object> items = new ArrayList<Object>((end - start) / step + 1);
+            int array_size = (end - start) / step + 1;
+            if (array_size == -1) {
+                return null;
+            }
+
+            List<Object> items = new ArrayList<Object>(array_size);
             for (int i = start; i <= end && i < size; i += step) {
                 Object item = path.getArrayItem(currentObject, i);
                 items.add(item);
@@ -1442,7 +1490,6 @@ public class JSONPath implements JSONAware {
             this.eq = eq;
         }
 
-        @Override
         public boolean apply(JSONPath path, Object rootObject, Object currentObject, Object item) {
             Object propertyValue = path.getPropertyValue(item, propertyName, false);
             boolean result = value.equals(propertyValue);
@@ -2109,7 +2156,12 @@ public class JSONPath implements JSONAware {
             for (int i = 0; i < list.size(); ++i) {
                 Object obj = list.get(i);
                 Object itemValue = getPropertyValue(obj, propertyName, strictMode);
-                fieldValues.add(itemValue);
+                if (itemValue instanceof Collection) {
+                    Collection collection = (Collection) itemValue;
+                    fieldValues.addAll(collection);
+                } else {
+                    fieldValues.add(itemValue);
+                }
             }
 
             return fieldValues;
@@ -2186,7 +2238,7 @@ public class JSONPath implements JSONAware {
                 FieldSerializer fieldDeser = beanSerializer.getFieldSerializer(propertyName);
                 if (fieldDeser != null) {
                     try {
-                        Object val = fieldDeser.getPropertyValue(currentObject);
+                        Object val = fieldDeser.getPropertyValueDirect(currentObject);
                         results.add(val);
                     } catch (InvocationTargetException ex) {
                         throw new JSONException("getFieldValue error." + propertyName, ex);
@@ -2291,6 +2343,17 @@ public class JSONPath implements JSONAware {
         return beanSerializer;
     }
 
+    protected JavaBeanDeserializer getJavaBeanDeserializer(final Class<?> currentClass) {
+        JavaBeanDeserializer beanDeserializer = null;
+        {
+            ObjectDeserializer deserializer = parserConfig.getDeserializer(currentClass);
+            if (deserializer instanceof JavaBeanDeserializer) {
+                beanDeserializer = (JavaBeanDeserializer) deserializer;
+            }
+        }
+        return beanDeserializer;
+    }
+
     @SuppressWarnings("rawtypes")
     int evalSize(Object currentObject) {
         if (currentObject == null) {
@@ -2333,7 +2396,6 @@ public class JSONPath implements JSONAware {
         }
     }
 
-    @Override
     public String toJSONString() {
         return JSON.toJSONString(path);
     }

@@ -83,14 +83,14 @@ public abstract class FieldDeserializer {
                         }
                     } else {
                         Collection collection = (Collection) method.invoke(object);
-                        if (collection != null) {
+                        if (collection != null && value != null) {
+                            collection.clear();
                             collection.addAll((Collection) value);
                         }
                     }
                 } else {
                     method.invoke(object, value);
                 }
-                return;
             } else {
                 final Field field = fieldInfo.field;
                 
@@ -117,7 +117,8 @@ public abstract class FieldDeserializer {
                         }
                     } else {
                         Collection collection = (Collection) field.get(object);
-                        if (collection != null) {
+                        if (collection != null && value != null) {
+                            collection.clear();
                             collection.addAll((Collection) value);
                         }
                     }
